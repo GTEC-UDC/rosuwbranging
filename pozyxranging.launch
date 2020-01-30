@@ -1,0 +1,8 @@
+<launch>
+ 	<arg default="/dev/ttyUSB0" name="usbPort"></arg>
+    <node name="pozyxranging" output="screen" pkg="gtec_uwb_ranging" type="pozyxranging">
+        <param name="usbPort" value="$(arg usbPort)" type="str"></param>
+        <param name="angleTopic" value="/mavros/global_position/compass_hdg" type="str"></param>
+        <param name="useAngle" value="0" type="int"></param>
+    </node>
+</launch>
