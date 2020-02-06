@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-#include "PozyxRangingReader.h"
+#include "PozyxRangingIMUReader.h"
 
 
 #define INST_REPORT_LEN   (20)
@@ -30,18 +30,23 @@ SOFTWARE.
 #define INST_CONFIG_LEN   (1)
 
 
-PozyxRangingReader::PozyxRangingReader() {
+PozyxRangingIMUReader::PozyxRangingIMUReader() {
     _header_loaded = false;
+    mSeq = 0;
 }
 
-PozyxRangingReader::~PozyxRangingReader() {
+PozyxRangingIMUReader::~PozyxRangingIMUReader() {
     if (_serialUWB) {
         _serialUWB->close();
     }
 }
 
+void PozyxRangingIMUReader::newAngle(const std_msgs::Float64 newAngle){
 
-int PozyxRangingReader::openSerialPort(std::string name, int portType) {
+    _lastAngle = newAngle.data;
+}
+
+int PozyxRangingIMUReader::openSerialPort(std::string name, int portType) {
     int error = -1;
     boost::system::error_code errorCode;
 
@@ -78,7 +83,7 @@ int PozyxRangingReader::openSerialPort(std::string name, int portType) {
     return error;
 }
 
-void PozyxRangingReader::async_read_some_() {
+void PozyxRangingIMUReader::async_read_some_() {
 
     //ROS_INFO("async_read_some");
 
@@ -90,15 +95,15 @@ void PozyxRangingReader::async_read_some_() {
     _serialUWB->async_read_some(
         boost::asio::buffer(read_buf_raw_, SERIAL_PORT_READ_BUF_SIZE),
         boost::bind(
-            &PozyxRangingReader::on_receive_,
+            &PozyxRangingIMUReader::on_receive_,
             this, boost::asio::placeholders::error,
             boost::asio::placeholders::bytes_transferred));
 }
 
-void PozyxRangingReader::on_receive_(const boost::system::error_code &ec, size_t bytes_transferred) {
+void PozyxRangingIMUReader::on_receive_(const boost::system::error_code &ec, size_t bytes_transferred) {
 
     bool hasError = false;
-
+    ROS_INFO("DEBUG:chunk received");
     //Deberia ser un mensaje de ranging de UWB
     if (_serialUWB.get() == NULL || !_serialUWB->is_open()) {
         ROS_INFO("DEBUG:SeriaUSB ==NULL || !is_open()");
@@ -110,74 +115,90 @@ void PozyxRangingReader::on_receive_(const boost::system::error_code &ec, size_t
         hasError = true;
     }
 
-
     if (!hasError) {
         for (unsigned int i = 0; i < bytes_transferred; ++i) {
             char c = read_buf_raw_[i];
             buff_to_process.push_back(c);
         }
 
-        //ROS_INFO("DEBUG:buff_to_process size %d", (int) buff_to_process.size());
+        ROS_INFO("DEBUG:buff_to_process size %d", (int) buff_to_process.size());
         if (buff_to_process.size() >= TOF_REPORT_LEN) {
             bool somethingToProcess = true;
             while (somethingToProcess) {
+                ROS_INFO("DEBUG: Processing");
                 somethingToProcess = false;
                 int headerPos = 0;
-                bool headerFound = false;
+                bool headerRanginFound = false, headerImuFound = false;
 
                 int bufLength = (int) buff_to_process.size();
 
                 while (headerPos < bufLength-1) {
 
                     if (((uint8_t)buff_to_process[headerPos] == 0xFA) && ((uint8_t)buff_to_process[headerPos + 1] == 0xFA)) {
-                        headerFound = true;
-                        //ROS_INFO("DEBUG:Header found");
+                        headerRanginFound = true;
+                        ROS_INFO("DEBUG:Header Ranging found");
+                        break;
+                    } else if (((uint8_t)buff_to_process[headerPos] == 0xFD) && ((uint8_t)buff_to_process[headerPos + 1] == 0xFD)) {
+                        headerImuFound = true;
+                        ROS_INFO("DEBUG:Header Imu found");
                         break;
                     }
+
                     headerPos += 1;
                 }
 
-                if (!headerFound) {
-                    //ROS_INFO("DEBUG:Header NOT found");
+                if (!headerImuFound && !headerRanginFound) {
+                    ROS_INFO("DEBUG:Header NOT found");
                     //Borramos todo el buffer pendiente y salimos, ya que en el buffer no hay ningun
                     //mensaje completo
                     //Podria quedar solo el primer byte de una cabecera, lo comprobamos
                     if ((uint8_t) buff_to_process[bufLength-1] == 0xFA){
                         buff_to_process.erase(buff_to_process.begin(), buff_to_process.end() - 1);
-                    } else {
+                    } else if ((uint8_t) buff_to_process[bufLength-1] == 0xFD){
+                        buff_to_process.erase(buff_to_process.begin(), buff_to_process.end() - 1);
+                    }else {
                         //No hay nada util, borramos todo
+                        ROS_INFO("DEBUG:Delete all buffer");
                         buff_to_process.clear();
                     }
                     break;
                 } else {
-                   // ROS_INFO("DEBUG:Header found HeaderPos: %d", headerPos);
+                    ROS_INFO("DEBUG:Header found HeaderPos: %d", headerPos);
                     //Comprobamos si en el buffer queda suficiente espacio para un mensaje completo
-                    bool enoughSize = (headerPos + TOF_REPORT_LEN) <= bufLength;
+                    bool enoughSize = false;
+                    int msgSize = 0;
+
+                    if (headerRanginFound){
+                        msgSize = TOF_REPORT_LEN;
+                    } else if (headerImuFound){
+                        msgSize = IMU_REPORT_LEN;
+                    } 
+
+                    ROS_INFO("DEBUG: HeaderPos: %d Msg Size: %d BuffLength: %d", headerPos, msgSize, bufLength);
+
+                    enoughSize = (headerPos + msgSize) <= bufLength;
 
                     if (enoughSize) {
-                       // ROS_INFO("DEBUG:has enoughSize");
+                        ROS_INFO("DEBUG:has enoughSize");
                         //Comprobamos si la cola es correcta
-                        bool tailFound = false;
-                       // ROS_INFO("DEBUG:Tail pos byte: %x", (uint8_t) buff_to_process[headerPos + TOF_REPORT_LEN - 2]);
-                        if (((uint8_t) buff_to_process[headerPos + TOF_REPORT_LEN - 2] == 0xBB) && ((uint8_t) buff_to_process[headerPos + TOF_REPORT_LEN - 1] == 0xBB)) {
-                            tailFound = true;
-                             //ROS_INFO("DEBUG:TAIL FOUND ++++");
-                        }
+                        bool tailFound = (((uint8_t) buff_to_process[headerPos + msgSize - 2] == 0xBB) && ((uint8_t) buff_to_process[headerPos + msgSize - 1] == 0xBB));
 
-                        if (tailFound) {
-                            //Decodificamos
+                        if (tailFound){
+                            ROS_INFO("DEBUG: Tail Found");
                             std::vector<char>::const_iterator first = buff_to_process.begin() + headerPos;
-                            std::vector<char>::const_iterator last = buff_to_process.begin() + headerPos + TOF_REPORT_LEN;
-                            std::vector<char> newRanging(first, last);
-                            newData(newRanging);
-
-                            //Borramos todos los datos incluida la ultima cola
-                            buff_to_process.erase(buff_to_process.begin(), buff_to_process.begin() + headerPos + TOF_REPORT_LEN);
-
+                            std::vector<char>::const_iterator last = buff_to_process.begin() + headerPos + msgSize;
+                            std::vector<char> newDataToProccess(first, last);
+                            if (headerRanginFound){
+                                newRangingMsg(newDataToProccess);
+                            } else if (headerImuFound){
+                                newImuMsg(newDataToProccess);
+                            } 
+                            buff_to_process.erase(buff_to_process.begin(), buff_to_process.begin() + headerPos + msgSize);
                         } else {
+                            ROS_INFO("DEBUG: Tail Not Found");
                             //No hay cola, estamos seguros que desde header_pos a header_pos + TOF_REPORT_LEN no hay mensaje
                             //Borramos los datos en esa parte
-                            buff_to_process.erase(buff_to_process.begin(), buff_to_process.begin() + headerPos + TOF_REPORT_LEN);
+                            buff_to_process.erase(buff_to_process.begin(), buff_to_process.begin() + headerPos + msgSize);
                         }
 
                         //Comprobamos si sigue quedando espacio para almacenar un mensaje
@@ -186,7 +207,7 @@ void PozyxRangingReader::on_receive_(const boost::system::error_code &ec, size_t
                         }
 
                     } else {
-                         //ROS_INFO("DEBUG:has NOT enoughSize");
+                         ROS_INFO("DEBUG:has NOT enoughSize");
                         //Se trata de un mensaje sin cola, tenemos que esperar que haya mas bytes
                         //No hacemos nada y ya se sale
                         break;
@@ -195,19 +216,19 @@ void PozyxRangingReader::on_receive_(const boost::system::error_code &ec, size_t
             }
         }
 
+        ROS_INFO("DEBUG:read more");
         async_read_some_();
     }
 
 }
 
 
-
-
-void PozyxRangingReader::start(std::string usbPort, ros::Publisher aPub) {
+void PozyxRangingIMUReader::start(std::string usbPort, ros::Publisher rangingPub, ros::Publisher imuPub) {
 
     ROS_INFO("Iniciando UWB receiver");
     uwb_port_name = usbPort;
-    ros_pub = aPub;
+    mRangingPub = rangingPub;
+    mImuPub = imuPub;
 
     //Abrimos el puerto por donde recibiremos las medidas de UWB
     ROS_INFO("Intentando abrir puerto %s", uwb_port_name.c_str());
@@ -227,10 +248,10 @@ void PozyxRangingReader::start(std::string usbPort, ros::Publisher aPub) {
 }
 
 
-void PozyxRangingReader::newData(const std::vector<char> data) {
+void PozyxRangingIMUReader::newRangingMsg(const std::vector<char> data) {
 
     //ROS_INFO("DEBUG:NEW DATA ****");
-
+    ROS_INFO("New Ranging");
     std::string nowstr = "T:hhmmsszzz:";
     int originType,destinationType, range, rangetime, seq, prf, channel, datarate, prfValue;
     double channelValue, datarateValue;
@@ -321,7 +342,71 @@ void PozyxRangingReader::newData(const std::vector<char> data) {
     ranging_msg.angle = angle;
 
     if (seq <= 255) {
-        ros_pub.publish(ranging_msg);
+        mRangingPub.publish(ranging_msg);
     }
+
+}
+
+float PozyxRangingIMUReader::bytesToFloat(char b0, char b1, char b2, char b3){
+    float f;
+    char b[] = {b0,b1,b2,b3};
+    memcpy(&f, &b, sizeof(f));
+    return f;
+}
+
+void PozyxRangingIMUReader::newImuMsg(const std::vector<char> data) {
+    ROS_INFO("New IMU");
+    int16_t tagId = int((uint8_t)(data[3]) << 8 |
+                    (uint8_t)(data[2]));
+
+    sensor_msgs::Imu imu_msg;
+
+    std::string s(data.begin(), data.end());
+    ROS_INFO("Bytes %s", s.c_str());
+
+    int i = 3;
+    imu_msg.orientation.x = bytesToFloat(data[i+1], data[i+2], data[i+3], data[i+4]);
+    i+=4;
+    imu_msg.orientation.y = bytesToFloat(data[i+1], data[i+2], data[i+3], data[i+4]);
+    i+=4;
+    imu_msg.orientation.z = bytesToFloat(data[i+1], data[i+2], data[i+3], data[i+4]);
+    i+=4;
+    imu_msg.orientation.w = bytesToFloat(data[i+1], data[i+2], data[i+3], data[i+4]);
+    i+=4;
+    imu_msg.linear_acceleration.x = bytesToFloat(data[i+1], data[i+2], data[i+3], data[i+4]);
+    i+=4;
+    imu_msg.linear_acceleration.y = bytesToFloat(data[i+1], data[i+2], data[i+3], data[i+4]);
+    i+=4;
+    imu_msg.linear_acceleration.z = bytesToFloat(data[i+1], data[i+2], data[i+3], data[i+4]);
+    i+=4;
+    imu_msg.angular_velocity.x = bytesToFloat(data[i+1], data[i+2], data[i+3], data[i+4]);
+    i+=4;
+    imu_msg.angular_velocity.y = bytesToFloat(data[i+1], data[i+2], data[i+3], data[i+4]);
+    i+=4;
+    imu_msg.angular_velocity.z = bytesToFloat(data[i+1], data[i+2], data[i+3], data[i+4]);
+
+    for (int j = 0; j < 9; ++j)
+    {
+        imu_msg.orientation_covariance[j] = 0.0;
+        imu_msg.angular_velocity_covariance[j] = 0.0;
+        imu_msg.linear_acceleration_covariance[j] = 0.0;
+    }
+
+    std::stringstream stream;
+    stream << std::hex << tagId;
+    std::string tagIdStr(stream.str());
+
+
+    imu_msg.header.frame_id = tagIdStr;
+    imu_msg.header.stamp = ros::Time::now();
+    imu_msg.header.seq = mSeq;
+
+    mSeq+=1;
+    if (mSeq>255){
+        mSeq = 0;
+    }
+
+    mImuPub.publish(imu_msg);
+    ROS_INFO("Published IMU msg");
 
 }

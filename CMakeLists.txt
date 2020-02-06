@@ -34,11 +34,21 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
 )
 
-
 set(SOURCE_FILES_POZYX_RANGING src/uwbranging/publishers/node_pozyx_ranging.cpp
     src/uwbranging/usb/PozyxRangingReader.cpp
     src/uwbranging/usb/PozyxRangingReader.h
     src/uwbranging/usb/microbson.hpp)
+
+set(SOURCE_FILES_POZYX_IMU_RANGING src/uwbranging/publishers/node_pozyx_imu_ranging.cpp
+    src/uwbranging/usb/PozyxRangingIMUReader.cpp
+    src/uwbranging/usb/PozyxRangingIMUReader.h
+    src/uwbranging/usb/microbson.hpp)
+
+set(SOURCE_FILES_POZYX_CIR_RANGING src/uwbranging/publishers/node_pozyx_cir_ranging.cpp
+    src/uwbranging/usb/PozyxRangingCIRReader.cpp
+    src/uwbranging/usb/PozyxRangingCIRReader.h
+    src/uwbranging/usb/microbson.hpp)
+
 
 add_executable(pozyxranging ${SOURCE_FILES_POZYX_RANGING})
 add_dependencies(pozyxranging ${catkin_EXPORTED_TARGETS})
@@ -46,4 +56,20 @@ target_link_libraries(pozyxranging
    ${catkin_LIBRARIES}
  )
 add_dependencies(pozyxranging gtec_msgs_generate_messages_cpp)
+
+
+
+add_executable(pozyxrangingimu ${SOURCE_FILES_POZYX_IMU_RANGING})
+add_dependencies(pozyxrangingimu ${catkin_EXPORTED_TARGETS})
+target_link_libraries(pozyxrangingimu
+   ${catkin_LIBRARIES}
+ )
+add_dependencies(pozyxrangingimu gtec_msgs_generate_messages_cpp)
+
+add_executable(pozyxrangingcir ${SOURCE_FILES_POZYX_CIR_RANGING})
+add_dependencies(pozyxrangingcir ${catkin_EXPORTED_TARGETS})
+target_link_libraries(pozyxrangingcir
+   ${catkin_LIBRARIES}
+ )
+add_dependencies(pozyxrangingcir gtec_msgs_generate_messages_cpp)
 

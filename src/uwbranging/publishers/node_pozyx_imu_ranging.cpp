@@ -21,22 +21,23 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
-#include "PozyxRangingReader.h"
+#include "PozyxRangingIMUReader.h"
 
 
 int main(int argc, char *argv[])
 {
 
 
-    ros::init(argc, argv, "pozyxranging");
+    ros::init(argc, argv, "pozyxrangingimu");
     ros::NodeHandle n("~");
-    ros::Publisher pozyx_ranging_pub = n.advertise<gtec_msgs::PozyxRanging>("/gtec/uwb/ranging/pozyx", 1000);
+    ros::Publisher pozyx_ranging_pub = n.advertise<gtec_msgs::PozyxRanging>("/gtec/pozyx/ranging", 1000);
+    ros::Publisher pozyx_imu_pub = n.advertise<sensor_msgs::Imu>("/gtec/pozyx/imu", 1000);
 
     std::string usbPort;
     n.getParam("usbPort", usbPort);
 
-    PozyxRangingReader pozyxRangingReader;
-    pozyxRangingReader.start(usbPort, pozyx_ranging_pub);
+    PozyxRangingIMUReader pozyxRangingImuReader;
+    pozyxRangingImuReader.start(usbPort, pozyx_ranging_pub, pozyx_imu_pub);
 
     ros::spin();
 

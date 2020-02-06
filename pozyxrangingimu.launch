@@ -1,6 +1,6 @@
 <launch>
  	<arg default="/dev/ttyUSB0" name="usbPort"></arg>
-    <node name="pozyxranging" output="screen" pkg="gtec_uwb_ranging" type="pozyxranging">
+    <node name="pozyxrangingimu" output="screen" pkg="gtec_uwb_ranging" type="pozyxrangingimu">
         <param name="usbPort" value="$(arg usbPort)" type="str"></param>
     </node>
 </launch>

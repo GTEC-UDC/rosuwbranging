@@ -22,8 +22,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-#ifndef POZYX_RANGING_READER_H
-#define POZYX_RANGING_READER_H
+#ifndef POZYX_RANGING_IMU_READER_H
+#define POZYX_RANGING_IMU_READER_H
 
 #define BOOST_NO_CXX11_SCOPED_ENUMS
 #include <boost/asio.hpp>
@@ -52,10 +52,12 @@ SOFTWARE.
 #include "std_msgs/Float64.h"
 #include <sstream>
 #include <gtec_msgs/PozyxRanging.h>
+#include <sensor_msgs/Imu.h>
 
 typedef boost::shared_ptr<boost::asio::serial_port> serial_port_ptr;
 #define SERIAL_PORT_READ_BUF_SIZE 2048
 #define TOF_REPORT_LEN  24
+#define IMU_REPORT_LEN  46
 
 class DataAnchor;
 class DataTag;
@@ -82,7 +84,6 @@ class DataTag;
 #define MAX_NUM_TAGS (8)
 #define MAX_NUM_ANCS (4)
 
-
 typedef struct
 {
     double x, y, z;
@@ -95,16 +96,19 @@ typedef struct
     double y;
 } vec2d;
 
-class PozyxRangingReader
+class PozyxRangingIMUReader
 {
 
 public:
-     PozyxRangingReader();
-    ~PozyxRangingReader();
+     PozyxRangingIMUReader();
+    ~PozyxRangingIMUReader();
 
     int openSerialPort(std::string name,int portType); //open selected serial port
-    void start(std::string usbPort, ros::Publisher aPub);
-    void newData(const std::vector<char> data);
+    void start(std::string usbPort, ros::Publisher ranginPub, ros::Publisher imuPub);
+
+    void newRangingMsg(const std::vector<char> data);
+    void newImuMsg(const std::vector<char> data);
+    void newAngle(const std_msgs::Float64 newAngle);
 
 
 protected:
@@ -117,13 +121,14 @@ protected:
     virtual void async_read_some_();
     virtual void on_receive_(const boost::system::error_code& ec, size_t bytes_transferred);
 private:
-
+    float bytesToFloat(char b0, char b1, char b2, char b3);
     serial_port_ptr _serialUWB;
-    ros::Publisher ros_pub;
+    ros::Publisher mRangingPub, mImuPub;
     std::string uwb_port_name;
     boost::thread *thread_uwb;
     bool _header_loaded;
     double _lastAngle;
+    int mSeq;
 };
 
-#endif //POZYX_RANGING_READER_H
+#endif //POZYX_RANGING_IMU_READER_H

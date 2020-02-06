@@ -22,8 +22,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-#ifndef POZYX_RANGING_READER_H
-#define POZYX_RANGING_READER_H
+#ifndef POZYX_RANGING_CIR_READER_H
+#define POZYX_RANGING_CIR_READER_H
 
 #define BOOST_NO_CXX11_SCOPED_ENUMS
 #include <boost/asio.hpp>
@@ -50,12 +50,13 @@ SOFTWARE.
 #include "std_msgs/String.h"
 #include "std_msgs/Int32MultiArray.h"
 #include "std_msgs/Float64.h"
+#include "std_msgs/Int16MultiArray.h"
 #include <sstream>
-#include <gtec_msgs/PozyxRanging.h>
+#include <gtec_msgs/PozyxRangingWithCir.h>
 
 typedef boost::shared_ptr<boost::asio::serial_port> serial_port_ptr;
-#define SERIAL_PORT_READ_BUF_SIZE 2048
-#define TOF_REPORT_LEN  24
+#define SERIAL_PORT_READ_BUF_SIZE 5000
+#define TOF_REPORT_LEN  4088
 
 class DataAnchor;
 class DataTag;
@@ -95,17 +96,16 @@ typedef struct
     double y;
 } vec2d;
 
-class PozyxRangingReader
+class PozyxRangingCIRReader
 {
 
 public:
-     PozyxRangingReader();
-    ~PozyxRangingReader();
+     PozyxRangingCIRReader();
+    ~PozyxRangingCIRReader();
 
     int openSerialPort(std::string name,int portType); //open selected serial port
     void start(std::string usbPort, ros::Publisher aPub);
     void newData(const std::vector<char> data);
-
 
 protected:
     boost::mutex mutex_;
@@ -126,4 +126,4 @@ private:
     double _lastAngle;
 };
 
-#endif //POZYX_RANGING_READER_H
+#endif //POZYX_RANGING_CIR_READER_H

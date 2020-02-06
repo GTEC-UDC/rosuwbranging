@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-#include "PozyxRangingReader.h"
+#include "PozyxRangingCIRReader.h"
 
 
 #define INST_REPORT_LEN   (20)
@@ -30,18 +30,18 @@ SOFTWARE.
 #define INST_CONFIG_LEN   (1)
 
 
-PozyxRangingReader::PozyxRangingReader() {
+PozyxRangingCIRReader::PozyxRangingCIRReader() {
     _header_loaded = false;
 }
 
-PozyxRangingReader::~PozyxRangingReader() {
+PozyxRangingCIRReader::~PozyxRangingCIRReader() {
     if (_serialUWB) {
         _serialUWB->close();
     }
 }
 
 
-int PozyxRangingReader::openSerialPort(std::string name, int portType) {
+int PozyxRangingCIRReader::openSerialPort(std::string name, int portType) {
     int error = -1;
     boost::system::error_code errorCode;
 
@@ -78,35 +78,35 @@ int PozyxRangingReader::openSerialPort(std::string name, int portType) {
     return error;
 }
 
-void PozyxRangingReader::async_read_some_() {
+void PozyxRangingCIRReader::async_read_some_() {
 
-    //ROS_INFO("async_read_some");
+    //ROS_DEBUG("async_read_some");
 
     if (_serialUWB.get() == NULL || !_serialUWB->is_open()) {
-        ROS_INFO("DEBUG:SeriaUSB ==NULL || !is_open()");
+        ROS_DEBUG("DEBUG:SeriaUSB ==NULL || !is_open()");
         return;
     }
 
     _serialUWB->async_read_some(
         boost::asio::buffer(read_buf_raw_, SERIAL_PORT_READ_BUF_SIZE),
         boost::bind(
-            &PozyxRangingReader::on_receive_,
+            &PozyxRangingCIRReader::on_receive_,
             this, boost::asio::placeholders::error,
             boost::asio::placeholders::bytes_transferred));
 }
 
-void PozyxRangingReader::on_receive_(const boost::system::error_code &ec, size_t bytes_transferred) {
+void PozyxRangingCIRReader::on_receive_(const boost::system::error_code &ec, size_t bytes_transferred) {
 
     bool hasError = false;
 
     //Deberia ser un mensaje de ranging de UWB
     if (_serialUWB.get() == NULL || !_serialUWB->is_open()) {
-        ROS_INFO("DEBUG:SeriaUSB ==NULL || !is_open()");
+        ROS_DEBUG("DEBUG:SeriaUSB ==NULL || !is_open()");
         hasError = true;
     }
 
     if (ec) {
-        ROS_INFO("DEBUG:Error Code %d, %s ", (int) ec.value(), ec.message().c_str());
+        ROS_DEBUG("DEBUG:Error Code %d, %s ", (int) ec.value(), ec.message().c_str());
         hasError = true;
     }
 
@@ -117,7 +117,7 @@ void PozyxRangingReader::on_receive_(const boost::system::error_code &ec, size_t
             buff_to_process.push_back(c);
         }
 
-        //ROS_INFO("DEBUG:buff_to_process size %d", (int) buff_to_process.size());
+        ROS_DEBUG("DEBUG:buff_to_process size %d", (int) buff_to_process.size());
         if (buff_to_process.size() >= TOF_REPORT_LEN) {
             bool somethingToProcess = true;
             while (somethingToProcess) {
@@ -127,22 +127,22 @@ void PozyxRangingReader::on_receive_(const boost::system::error_code &ec, size_t
 
                 int bufLength = (int) buff_to_process.size();
 
-                while (headerPos < bufLength-1) {
+                while (headerPos < bufLength - 1) {
 
                     if (((uint8_t)buff_to_process[headerPos] == 0xFA) && ((uint8_t)buff_to_process[headerPos + 1] == 0xFA)) {
                         headerFound = true;
-                        //ROS_INFO("DEBUG:Header found");
+                        ROS_DEBUG("DEBUG:Header found");
                         break;
                     }
                     headerPos += 1;
                 }
 
                 if (!headerFound) {
-                    //ROS_INFO("DEBUG:Header NOT found");
+                    ROS_DEBUG("DEBUG:Header NOT found");
                     //Borramos todo el buffer pendiente y salimos, ya que en el buffer no hay ningun
                     //mensaje completo
                     //Podria quedar solo el primer byte de una cabecera, lo comprobamos
-                    if ((uint8_t) buff_to_process[bufLength-1] == 0xFA){
+                    if ((uint8_t) buff_to_process[bufLength - 1] == 0xFA) {
                         buff_to_process.erase(buff_to_process.begin(), buff_to_process.end() - 1);
                     } else {
                         //No hay nada util, borramos todo
@@ -150,18 +150,18 @@ void PozyxRangingReader::on_receive_(const boost::system::error_code &ec, size_t
                     }
                     break;
                 } else {
-                   // ROS_INFO("DEBUG:Header found HeaderPos: %d", headerPos);
+                     ROS_DEBUG("DEBUG:Header found HeaderPos: %d", headerPos);
                     //Comprobamos si en el buffer queda suficiente espacio para un mensaje completo
                     bool enoughSize = (headerPos + TOF_REPORT_LEN) <= bufLength;
 
                     if (enoughSize) {
-                       // ROS_INFO("DEBUG:has enoughSize");
+                         ROS_DEBUG("DEBUG:has enoughSize");
                         //Comprobamos si la cola es correcta
                         bool tailFound = false;
-                       // ROS_INFO("DEBUG:Tail pos byte: %x", (uint8_t) buff_to_process[headerPos + TOF_REPORT_LEN - 2]);
+                         ROS_DEBUG("DEBUG:Tail pos byte: %x", (uint8_t) buff_to_process[headerPos + TOF_REPORT_LEN - 2]);
                         if (((uint8_t) buff_to_process[headerPos + TOF_REPORT_LEN - 2] == 0xBB) && ((uint8_t) buff_to_process[headerPos + TOF_REPORT_LEN - 1] == 0xBB)) {
                             tailFound = true;
-                             //ROS_INFO("DEBUG:TAIL FOUND ++++");
+                            ROS_DEBUG("DEBUG:TAIL FOUND ++++");
                         }
 
                         if (tailFound) {
@@ -186,7 +186,7 @@ void PozyxRangingReader::on_receive_(const boost::system::error_code &ec, size_t
                         }
 
                     } else {
-                         //ROS_INFO("DEBUG:has NOT enoughSize");
+                        ROS_DEBUG("DEBUG:has NOT enoughSize");
                         //Se trata de un mensaje sin cola, tenemos que esperar que haya mas bytes
                         //No hacemos nada y ya se sale
                         break;
@@ -202,37 +202,34 @@ void PozyxRangingReader::on_receive_(const boost::system::error_code &ec, size_t
 
 
 
+void PozyxRangingCIRReader::start(std::string usbPort, ros::Publisher aPub) {
 
-void PozyxRangingReader::start(std::string usbPort, ros::Publisher aPub) {
-
-    ROS_INFO("Iniciando UWB receiver");
+    ROS_INFO("Starting Pozyx USB receiver...");
     uwb_port_name = usbPort;
     ros_pub = aPub;
 
-    //Abrimos el puerto por donde recibiremos las medidas de UWB
-    ROS_INFO("Intentando abrir puerto %s", uwb_port_name.c_str());
+    ROS_INFO("Opening USB PORT:  %s ...", uwb_port_name.c_str());
     bool uwbPortOpen = (openSerialPort(uwb_port_name, PORT_TYPE_UWB) == 0);
 
     if (uwbPortOpen) {
-        ROS_INFO("Puerto abierto");
-
-        //Empezamos a leer asincronamente desde el puerto UWB y cuando recibamos datos los parseamos,
+        ROS_INFO("Port OPEN.");
         async_read_some_();
         boost::thread t(boost::bind(&boost::asio::io_service::run, &io_service_));
 
     } else {
-        ROS_INFO("No se pudo abrir el puerto");
+        ROS_INFO("Error: Could not open the USB port.");
     }
 
 }
 
 
-void PozyxRangingReader::newData(const std::vector<char> data) {
+void PozyxRangingCIRReader::newData(const std::vector<char> data) {
 
-    //ROS_INFO("DEBUG:NEW DATA ****");
-
+    ROS_DEBUG("DEBUG:NEW DATA ****");
+    std::vector<int> cirMeasurements;
+    int numCirMeasurements = 0;
     std::string nowstr = "T:hhmmsszzz:";
-    int originType,destinationType, range, rangetime, seq, prf, channel, datarate, prfValue;
+    int originType, destinationType, range, rangetime, seq, prf, channel, datarate, prfValue;
     double channelValue, datarateValue;
 
     int16_t originId, destinationId;
@@ -240,11 +237,11 @@ void PozyxRangingReader::newData(const std::vector<char> data) {
     double angle = _lastAngle;
 
     originId = int((uint8_t)(data[3]) << 8 |
-                    (uint8_t)(data[2]));
+                   (uint8_t)(data[2]));
 
     originType = data[4];
     destinationId = int((uint8_t)(data[6]) << 8 |
-                    (uint8_t)(data[5]));
+                        (uint8_t)(data[5]));
     destinationType = data[7];
 
     range = int((uint8_t)(data[11]) << 24 |
@@ -257,71 +254,84 @@ void PozyxRangingReader::newData(const std::vector<char> data) {
                     (uint8_t)(data[13]) << 8 |
                     (uint8_t)(data[12]));
 
-    //ROS_INFO("DEBUG:seq pos byte: %x",  (uint8_t)data[14]);
+    //ROS_DEBUG("DEBUG:seq pos byte: %x",  (uint8_t)data[14]);
     seq = (uint8_t)data[16];
-    
+
     rss = int((uint8_t)(data[18]) << 8 |
-                    (uint8_t)(data[17]));
+              (uint8_t)(data[17]));
 
     channel = (uint8_t)data[19];
     datarate = (uint8_t)data[20];
     prf = (uint8_t)data[21];
 
 
-        if (channel == 1) {
-            channelValue = 3494.4;
-        } else if (channel == 2) {
-            channelValue = 3993.6;
-        } else if (channel == 3) {
-            channelValue = 4492.8;
-        } else if (channel == 4) {
-            channelValue = 3993.6;
-        } else if (channel == 5) {
-            channelValue = 6489.6;
-        } else if (channel == 7) {
-            channelValue = 6489.6;
-        } else {
-            channelValue = -1.0;
-        }
+    if (channel == 1) {
+        channelValue = 3494.4;
+    } else if (channel == 2) {
+        channelValue = 3993.6;
+    } else if (channel == 3) {
+        channelValue = 4492.8;
+    } else if (channel == 4) {
+        channelValue = 3993.6;
+    } else if (channel == 5) {
+        channelValue = 6489.6;
+    } else if (channel == 7) {
+        channelValue = 6489.6;
+    } else {
+        channelValue = -1.0;
+    }
 
-        if (prf == DWT_PRF_16M) {
-            prfValue = 16;
-        } else if (prf == DWT_PRF_64M) {
-            prfValue = 64;
-        } else {
-            prfValue = -1;
-        }
+    
 
-        if (datarate == DWT_BR_110K) {
-            datarateValue = 0.11;
-        } else if (datarate == DWT_BR_6M8) {
-            datarateValue = 6.8;
-        } else if (datarate == DWT_BR_850K) {
-            datarateValue = 0.85;
-        } else {
-            datarateValue = -1.0;
-        }
+    if (prf == DWT_PRF_16M) {
+        prfValue = 16;
+        numCirMeasurements = 996;
+    } else if (prf == DWT_PRF_64M) {
+        prfValue = 64;
+        numCirMeasurements = 1016;
+    } else {
+        prfValue = -1;
+    }
+
+    if (datarate == DWT_BR_110K) {
+        datarateValue = 0.11;
+    } else if (datarate == DWT_BR_6M8) {
+        datarateValue = 6.8;
+    } else if (datarate == DWT_BR_850K) {
+        datarateValue = 0.85;
+    } else {
+        datarateValue = -1.0;
+    }
 
 
-    gtec_msgs::PozyxRanging ranging_msg;
+    //CIR
+    gtec_msgs::PozyxRangingWithCir ranging_with_cir_msg;
 
-    ranging_msg.originId = originId;
-    ranging_msg.originType = originType;
-    ranging_msg.destinationId = destinationId;
-    ranging_msg.destinationType = destinationType;
-    ranging_msg.range = range;
-    ranging_msg.seq = seq;
-    ranging_msg.ts = rangetime;
-    ranging_msg.rxPower = rss;
-    ranging_msg.channel = channelValue;
-    ranging_msg.prf = prfValue;
-    ranging_msg.datarate = datarateValue;
-    ranging_msg.preambleLength = 0;
-    ranging_msg.txGain = 0;
-    ranging_msg.angle = angle;
+    for (int i = 0; i < 2*numCirMeasurements; ++i)
+    {
+        int aCirMeasurement = int((uint8_t)(data[22+2*i+1]) << 8 |
+                        (uint8_t)(data[22+2*i]));
+
+        ranging_with_cir_msg.cir.push_back(aCirMeasurement);
+    }
+
+    ranging_with_cir_msg.originId = originId;
+    ranging_with_cir_msg.originType = originType;
+    ranging_with_cir_msg.destinationId = destinationId;
+    ranging_with_cir_msg.destinationType = destinationType;
+    ranging_with_cir_msg.range = range;
+    ranging_with_cir_msg.seq = seq;
+    ranging_with_cir_msg.ts = rangetime;
+    ranging_with_cir_msg.rxPower = rss;
+    ranging_with_cir_msg.channel = channelValue;
+    ranging_with_cir_msg.prf = prfValue;
+    ranging_with_cir_msg.datarate = datarateValue;
+    ranging_with_cir_msg.preambleLength = 0;
+    ranging_with_cir_msg.txGain = 0;
+    ranging_with_cir_msg.angle = angle;
 
     if (seq <= 255) {
-        ros_pub.publish(ranging_msg);
+        ros_pub.publish(ranging_with_cir_msg);
     }
 
 }
