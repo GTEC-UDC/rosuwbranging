@@ -226,9 +226,7 @@ void PozyxRangingCIRReader::start(std::string usbPort, ros::Publisher aPub) {
 void PozyxRangingCIRReader::newData(const std::vector<char> data) {
 
     ROS_DEBUG("DEBUG:NEW DATA ****");
-    std::vector<int> cirMeasurements;
     int numCirMeasurements = 0;
-    std::string nowstr = "T:hhmmsszzz:";
     int originType, destinationType, range, rangetime, seq, prf, channel, datarate, prfValue;
     double channelValue, datarateValue;
 
