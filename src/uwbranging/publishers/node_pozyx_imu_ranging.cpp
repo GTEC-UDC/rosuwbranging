@@ -30,7 +30,7 @@ int main(int argc, char *argv[])
 
     ros::init(argc, argv, "pozyxrangingimu");
     ros::NodeHandle n("~");
-    ros::Publisher pozyx_ranging_pub = n.advertise<gtec_msgs::PozyxRanging>("/gtec/pozyx/ranging", 1000);
+    ros::Publisher pozyx_ranging_pub = n.advertise<gtec_msgs::PozyxRanging>("/gtec/uwb/ranging/pozyx", 1000);
     ros::Publisher pozyx_imu_pub = n.advertise<sensor_msgs::Imu>("/gtec/pozyx/imu", 1000);
 
     std::string usbPort;
