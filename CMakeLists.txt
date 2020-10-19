@@ -12,6 +12,7 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   rospy
   std_msgs
+  geometry_msgs
   gtec_msgs
 )
 
@@ -49,6 +50,10 @@ set(SOURCE_FILES_POZYX_CIR_RANGING src/uwbranging/publishers/node_pozyx_cir_rang
     src/uwbranging/usb/PozyxRangingCIRReader.h
     src/uwbranging/usb/microbson.hpp)
 
+set(SOURCE_FILES_POZYX_POSITION src/uwbranging/publishers/node_pozyx_position.cpp
+    src/uwbranging/usb/PozyxPositionReader.cpp
+    src/uwbranging/usb/PozyxPositionReader.h
+    src/uwbranging/usb/microbson.hpp)
 
 add_executable(pozyxranging ${SOURCE_FILES_POZYX_RANGING})
 add_dependencies(pozyxranging ${catkin_EXPORTED_TARGETS})
@@ -73,3 +78,9 @@ target_link_libraries(pozyxrangingcir
  )
 add_dependencies(pozyxrangingcir gtec_msgs_generate_messages_cpp)
 
+add_executable(pozyxposition ${SOURCE_FILES_POZYX_POSITION})
+add_dependencies(pozyxposition ${catkin_EXPORTED_TARGETS})
+target_link_libraries(pozyxposition
+   ${catkin_LIBRARIES}
+ )
+add_dependencies(pozyxposition gtec_msgs_generate_messages_cpp)
