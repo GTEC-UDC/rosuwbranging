@@ -1,7 +1,7 @@
 <launch>
  	<arg default="/dev/ttyUSB0" name="usbPort"></arg>
     <arg default="0xABCD" name="targetDeviceId"></arg>
-    <node name="pozyxranging" output="screen" pkg="gtec_uwb_ranging" type="pozyxranging">
+    <node name="pozyxposition" output="screen" pkg="gtec_uwb_ranging" type="pozyxposition">
         <param name="usbPort" value="$(arg usbPort)" type="str"></param>
         <param name="targetDeviceId" value="$(arg targetDeviceId)" type="str"></param>
     </node>

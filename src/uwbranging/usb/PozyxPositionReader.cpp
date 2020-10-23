@@ -269,9 +269,9 @@ void PozyxPositionReader::newData(const std::vector<char> data) {
                     (uint8_t)(data[26]));
 
     geometry_msgs::PoseWithCovarianceStamped msg;
-    msg.pose.pose.position.x = x;
-    msg.pose.pose.position.y = y;
-    msg.pose.pose.position.z = z;
+    msg.pose.pose.position.x = x/1000.0f;
+    msg.pose.pose.position.y = y/1000.0f;
+    msg.pose.pose.position.z = z/1000.0f;
     msg.pose.pose.orientation.x = 0.0f;
     msg.pose.pose.orientation.y = 0.0f;
     msg.pose.pose.orientation.z = 0.0f;
