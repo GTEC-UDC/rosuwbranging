@@ -31,6 +31,7 @@ catkin_package(
 
 include_directories(src/uwbranging/usb)
 include_directories(src/uwbranging/publishers)
+include_directories(src/uwbranging/python)
 include_directories(
   ${catkin_INCLUDE_DIRS}
 )
