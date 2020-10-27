@@ -24,24 +24,27 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE. """
 
 
-import rospy, time, serial, os
+import rospy, time, serial, os, tf2_ros
 from time import sleep
 
 from pypozyx import (POZYX_POS_ALG_UWB_ONLY, POZYX_3D, Coordinates, POZYX_SUCCESS, PozyxConstants, version,
-                     DeviceCoordinates, PozyxSerial, get_first_pozyx_serial_port, SingleRegister, DeviceList, PozyxRegisters)
+                     DeviceCoordinates, PozyxSerial, get_first_pozyx_serial_port, SingleRegister, DeviceList, 
+                     PozyxRegisters, DeviceRange, EulerAngles, Acceleration, Quaternion,AngularVelocity)
                      
 from pypozyx.tools.version_check import perform_latest_version_check
 
 from std_msgs.msg import String
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from visualization_msgs.msg import MarkerArray
-
+from gtec_msgs.msg import Ranging
+from sensor_msgs.msg import Imu
+from geometry_msgs.msg import TransformStamped
 
 class PozyxLocalizator(object):
-    def __init__(self, pozyxSerial, ros_rate, publisher, targetDeviceId, algorithm=POZYX_POS_ALG_UWB_ONLY, dimension=POZYX_3D, height=1000):
+    def __init__(self, pozyxSerial, ros_rate, publisher_loc, publisher_ranging, publisher_imu, targetDeviceId, algorithm=POZYX_POS_ALG_UWB_ONLY, dimension=POZYX_3D, height=1000):
         self.targetDeviceId = targetDeviceId
         self.rate = ros_rate
-        self.r = ReadyToLocalize(pozyxSerial, publisher, algorithm, dimension, height, targetDeviceId)
+        self.r = ReadyToLocalize(pozyxSerial, publisher_loc, publisher_ranging, publisher_imu, algorithm, dimension, height, targetDeviceId)
         self.hasAnchors = False
 
     def setAnchors(self,anchors):
@@ -64,7 +67,7 @@ class PozyxLocalizator(object):
 class ReadyToLocalize(object):
     """Continuously calls the Pozyx positioning function and prints its position."""
 
-    def __init__(self, pozyx, pose_pub, algorithm=POZYX_POS_ALG_UWB_ONLY, dimension=POZYX_3D, height=1000, remote_id=None):
+    def __init__(self, pozyx, pose_pub, ranging_pub, imu_pub, algorithm=POZYX_POS_ALG_UWB_ONLY, dimension=POZYX_3D, height=1000, remote_id=None):
         self.pozyx = pozyx
         # self.anchors = anchors
         self.algorithm = algorithm
@@ -72,6 +75,9 @@ class ReadyToLocalize(object):
         self.height = height
         self.remote_id = remote_id
         self.pose_pub = pose_pub
+        self.ranging_pub = ranging_pub
+        self.imu_pub = imu_pub
+        self.seq = -1
 
 
     def setAnchors(self, anchors):
@@ -104,11 +110,78 @@ class ReadyToLocalize(object):
             position, self.dimension, self.height, self.algorithm, remote_id=self.remote_id)
         if status == POZYX_SUCCESS:
             self.printPublishPosition(position)
+            self.seq += 1
+            if self.seq>255:
+                self.seq=0
+            current_seq = self.seq
+            for anchor in self.anchors:
+                range = DeviceRange()
+                status = self.pozyx.getDeviceRangeInfo(anchor.network_id,range,self.remote_id)
+                if status == POZYX_SUCCESS:
+                    self.publishRanging(anchor.network_id, range, current_seq)
+                    #print("Anchor {}, Range (mm): {ran.distance} Rss: {ran.RSS} ".format("0x%0.4x" % anchor.network_id, ran=range))
+            
+
         # else:
         #     self.printPublishErrorCode("positioning")
+    
+    def publishImu(self):
+        quaternion = Quaternion()
+        acceleration = Acceleration()
+        angular_velocity = AngularVelocity()
+        self.pozyx.getQuaternion(quaternion, remote_id=self.remote_id)
+        self.pozyx.getLinearAcceleration_mg(acceleration, remote_id=self.remote_id)
+        self.pozyx.getAngularVelocity_dps(angular_velocity, remote_id=self.remote_id)
+        imu = Imu()
+        imu.header.frame_id = "base_link"
+        imu.header.stamp = rospy.Time.now()
+        imu.linear_acceleration = acceleration
+        imu.orientation.x = quaternion.x
+        imu.orientation.y = quaternion.y
+        imu.orientation.z = quaternion.z
+        imu.orientation.w = quaternion.w
+        imu.linear_acceleration.x = acceleration.x/1000 * 9.80664999999998
+        imu.linear_acceleration.y = acceleration.y/1000 * 9.80664999999998
+        imu.linear_acceleration.z = acceleration.z/1000 * 9.80664999999998
+        imu.angular_velocity.x = angular_velocity.x/57.2957795130824
+        imu.angular_velocity.y = angular_velocity.y/57.2957795130824
+        imu.angular_velocity.z = angular_velocity.z/57.2957795130824
+        
+        for i in range(9):
+            imu.angular_velocity_covariance[i] = 0.0
+            imu.linear_acceleration_covariance[i] = 0.0
+            imu.orientation_covariance[i] = 0.0
+
+        
+
+        for i in [0,4,8]:
+            imu.angular_velocity_covariance[i] = 0.001
+            imu.linear_acceleration_covariance[i] = 0.001
+            imu.orientation_covariance[i] = 0.001
+
+        
+        self.imu_pub.publish(imu)
+
+
+
+
+    def publishRanging(self, anchorId, range, seq):
+        ranging = Ranging()
+        ranging.anchorId = anchorId
+        ranging.tagId = self.remote_id
+        ranging.range = range.distance
+        ranging.rss = range.RSS
+        ranging.seq = seq
+        ranging.errorEstimation = 0.00393973
+        self.ranging_pub.publish(ranging)
+
 
     def printPublishPosition(self, position):
         """Prints the Pozyx's position and possibly sends it as a OSC packet"""
+
+
+
+
         network_id = self.remote_id
         if network_id is None:
             network_id = 0
@@ -126,10 +199,26 @@ class ReadyToLocalize(object):
         for i in range(36):
             p.pose.covariance[i] = 0.0
         
-        p.header.frame_id = "world"
+        p.header.frame_id = "map"
         p.header.stamp = rospy.Time.now()
 
         self.pose_pub.publish(p)
+        self.publishImu()
+
+        # tf2Broadcast = tf2_ros.TransformBroadcaster()
+        # tf2Stamp = TransformStamped()
+        # tf2Stamp.header.stamp = rospy.Time.now()
+        # tf2Stamp.header.frame_id = 'map'
+        # tf2Stamp.child_frame_id = 'odom'
+        # tf2Stamp.transform.translation.x = position.x/1000.0
+        # tf2Stamp.transform.translation.y = position.y/1000.0
+        # tf2Stamp.transform.translation.z = position.z/1000.0
+        # tf2Stamp.transform.rotation.x = 0
+        # tf2Stamp.transform.rotation.y = 0
+        # tf2Stamp.transform.rotation.z = 0
+        # tf2Stamp.transform.rotation.w = 1
+
+        # tf2Broadcast.sendTransform(tf2Stamp)
 
         #print("POS ID {}, x(mm): {pos.x} y(mm): {pos.y} z(mm): {pos.z}".format(
         #    "0x%0.4x" % network_id, pos=position))
@@ -218,7 +307,9 @@ if __name__ == "__main__":
     targetDeviceId = int(targetDeviceIdString,16)
     
 
-    pub = rospy.Publisher('/gtec/uwb/position/pozyx/'+targetDeviceIdString, PoseWithCovarianceStamped, queue_size=10)
+    pub_localization = rospy.Publisher('/gtec/uwb/position/pozyx/'+targetDeviceIdString, PoseWithCovarianceStamped, queue_size=100)
+    pub_ranging = rospy.Publisher("/gtec/uwb/ranging/pozyx", Ranging, queue_size=100)
+    pub_imu = rospy.Publisher("/gtec/uwb/imu/pozyx", Imu, queue_size=100)
     rate = rospy.Rate(10) # 10hz
 
 
@@ -240,7 +331,7 @@ if __name__ == "__main__":
         quit()
     pozyxSerial = PozyxSerial(serial_port)
 
-    pozyxLocalizator = PozyxLocalizator(pozyxSerial,rate, pub, targetDeviceId, algorithm, dimension, height)
+    pozyxLocalizator = PozyxLocalizator(pozyxSerial,rate, pub_localization, pub_ranging, pub_imu, targetDeviceId, algorithm, dimension, height)
 
 
     rospy.Subscriber('/gtec/toa/anchors', MarkerArray, pozyxLocalizator.callbackAnchorsMessage)
