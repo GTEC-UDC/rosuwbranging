@@ -62,6 +62,7 @@ class PozyxLocalizator(object):
                 deviceCoordinates = DeviceCoordinates(anchor.id,1, Coordinates(anchor.pose.position.x*1000, anchor.pose.position.y*1000, anchor.pose.position.z*1000))
                 anchors.append(deviceCoordinates)
             self.setAnchors(anchors)
+            self.hasAnchors = True
 
 
 class ReadyToLocalize(object):
@@ -91,11 +92,11 @@ class ReadyToLocalize(object):
         print("")
         print("- System will auto start positioning")
         print("")
-        if self.remote_id is None:
-            self.pozyx.printDeviceInfo(self.remote_id)
-        else:
-            for device_id in [None, self.remote_id]:
-                self.pozyx.printDeviceInfo(device_id)
+        # if self.remote_id is None:
+        #     self.pozyx.printDeviceInfo(self.remote_id)
+        # else:
+        #     for device_id in [None, self.remote_id]:
+        #         self.pozyx.printDeviceInfo(device_id)
         print("")
         print("------------POZYX POSITIONING V{} -------------".format(version))
         print("")
