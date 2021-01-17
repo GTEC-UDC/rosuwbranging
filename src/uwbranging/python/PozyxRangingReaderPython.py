@@ -124,6 +124,7 @@ if __name__ == "__main__":
 
     # Read parameters
     targetDeviceIdString = rospy.get_param('~targetDeviceId')
+    serial_port = rospy.get_param('~serial')
 
 
     targetDeviceId = int(targetDeviceIdString,16)
@@ -137,12 +138,12 @@ if __name__ == "__main__":
     print("targetDeviceId: " + targetDeviceIdString)
     print("=========== [---------------] ============")
 
-    # check_pypozyx_version = True
-    # if check_pypozyx_version:
-    #     perform_latest_version_check()
+    check_pypozyx_version = False
+    if check_pypozyx_version:
+        perform_latest_version_check()
 
     # shortcut to not have to find out the port yourself
-    serial_port = get_first_pozyx_serial_port()
+    #serial_port = get_first_pozyx_serial_port()
     if serial_port is None:
         print("No Pozyx connected. Check your USB cable or your driver!")
         quit()
