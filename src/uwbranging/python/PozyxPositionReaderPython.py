@@ -305,17 +305,17 @@ if __name__ == "__main__":
     elif dimensionString.startswith('DIMENSION_2_5D'):
         dimension = PozyxConstants.DIMENSION_2_5D
 
-    targetDeviceId = int(targetDeviceIdString,16)
+    targetDeviceId = int(str(targetDeviceIdString),16)
     
 
-    pub_localization = rospy.Publisher('/gtec/uwb/position/pozyx/'+targetDeviceIdString, PoseWithCovarianceStamped, queue_size=100)
-    pub_ranging = rospy.Publisher("/gtec/uwb/ranging/pozyx", Ranging, queue_size=100)
+    pub_localization = rospy.Publisher('/gtec/uwb/position/pozyx/'+str(targetDeviceIdString), PoseWithCovarianceStamped, queue_size=100)
+    pub_ranging = rospy.Publisher("/gtec/toa/ranging", Ranging, queue_size=100)
     pub_imu = rospy.Publisher("/gtec/uwb/imu/pozyx", Imu, queue_size=100)
     rate = rospy.Rate(10) # 10hz
 
 
     print("=========== POZYX Localizator ============")
-    print("targetDeviceId: " + targetDeviceIdString)
+    print("targetDeviceId: " + str(targetDeviceIdString))
     print("algorithm: " + algorithmString)
     print("dimension: " + dimensionString)
     print("height: " + str(height))
