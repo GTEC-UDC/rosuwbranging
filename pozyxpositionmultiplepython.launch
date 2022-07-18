@@ -1,0 +1,14 @@
+<launch>
+ 	<arg default="/dev/ttyUSB0" name="usbPort"></arg>
+    <arg default="[6a39, 6779]" name="target_ids"></arg>
+    <arg default="POSITIONING_ALGORITHM_UWB_ONLY" name="algorithm"></arg>
+    <arg default="DIMENSION_2_5D" name="dimension"></arg>
+    <arg default="1200" name="height"></arg>
+    <node name="PozyxPositionReaderMultiplePython" output="screen" pkg="gtec_uwb_ranging" type="PozyxPositionReaderMultiplePython.py">
+        <param name="usbPort" value="$(arg usbPort)"></param>
+        <rosparam param="target_ids" subst_value="True">$(arg target_ids)</rosparam>
+        <param name="algorithm" value="$(arg algorithm)"></param>
+        <param name="dimension" value="$(arg dimension)"></param>
+        <param name="height" value="$(arg height)"></param>
+    </node>
+</launch>

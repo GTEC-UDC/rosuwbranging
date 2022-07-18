@@ -41,10 +41,10 @@ from sensor_msgs.msg import Imu
 from geometry_msgs.msg import TransformStamped
 
 class PozyxLocalizator(object):
-    def __init__(self, pozyxSerial, ros_rate, publisher_loc, publisher_ranging, publisher_imu, targetDeviceId, algorithm=POZYX_POS_ALG_UWB_ONLY, dimension=POZYX_3D, height=1000):
-        self.targetDeviceId = targetDeviceId
+    def __init__(self, pozyxSerial, ros_rate, publishers_loc, publisher_ranging, publishers_imu, target_ids, algorithm=POZYX_POS_ALG_UWB_ONLY, dimension=POZYX_3D, height=1000):
+        self.target_ids = target_ids
         self.rate = ros_rate
-        self.r = ReadyToLocalize(pozyxSerial, publisher_loc, publisher_ranging, publisher_imu, algorithm, dimension, height, targetDeviceId)
+        self.r = ReadyToLocalize(pozyxSerial, publishers_loc, publisher_ranging, publishers_imu, algorithm, dimension, height, target_ids)
         self.hasAnchors = False
 
     def setAnchors(self,anchors):
@@ -61,23 +61,24 @@ class PozyxLocalizator(object):
             for anchor in anchorsMsg.markers:
                 deviceCoordinates = DeviceCoordinates(anchor.id,1, Coordinates(anchor.pose.position.x*1000, anchor.pose.position.y*1000, anchor.pose.position.z*1000))
                 anchors.append(deviceCoordinates)
-            self.setAnchors(anchors)
+
+            self.setAnchors(anchors=anchors)
             self.hasAnchors = True
 
 
 class ReadyToLocalize(object):
     """Continuously calls the Pozyx positioning function and prints its position."""
 
-    def __init__(self, pozyx, pose_pub, ranging_pub, imu_pub, algorithm=POZYX_POS_ALG_UWB_ONLY, dimension=POZYX_3D, height=1000, remote_id=None):
+    def __init__(self, pozyx, pose_pubs, ranging_pub, imu_pubs, algorithm=POZYX_POS_ALG_UWB_ONLY, dimension=POZYX_3D, height=1000, remote_ids=None):
         self.pozyx = pozyx
         # self.anchors = anchors
         self.algorithm = algorithm
         self.dimension = dimension
         self.height = height
-        self.remote_id = remote_id
-        self.pose_pub = pose_pub
+        self.remote_ids = remote_ids
+        self.pose_pubs = pose_pubs
         self.ranging_pub = ranging_pub
-        self.imu_pub = imu_pub
+        self.imu_pubs = imu_pubs
         self.seq = -1
 
 
@@ -92,11 +93,7 @@ class ReadyToLocalize(object):
         print("")
         print("- System will auto start positioning")
         print("")
-        # if self.remote_id is None:
-        #     self.pozyx.printDeviceInfo(self.remote_id)
-        # else:
-        #     for device_id in [None, self.remote_id]:
-        #         self.pozyx.printDeviceInfo(device_id)
+
         print("")
         print("------------POZYX POSITIONING V{} -------------".format(version))
         print("")
@@ -106,33 +103,34 @@ class ReadyToLocalize(object):
 
     def loop(self):
         """Performs positioning and displays/exports the results."""
-        position = Coordinates()
-        status = self.pozyx.doPositioning(
-            position, self.dimension, self.height, self.algorithm, remote_id=self.remote_id)
-        if status == POZYX_SUCCESS:
-            self.printPublishPosition(position)
-        self.seq += 1
-        if self.seq>255:
-            self.seq=0
-        current_seq = self.seq
-        for anchor in self.anchors:
-            range = DeviceRange()
-            status = self.pozyx.getDeviceRangeInfo(anchor.network_id,range,self.remote_id)
+        for remote_id in self.remote_ids:
+            position = Coordinates()
+            status = self.pozyx.doPositioning(
+                position, self.dimension, self.height, self.algorithm, remote_id=remote_id)
             if status == POZYX_SUCCESS:
-                self.publishRanging(anchor.network_id, range, current_seq)
-                    #print("Anchor {}, Range (mm): {ran.distance} Rss: {ran.RSS} ".format("0x%0.4x" % anchor.network_id, ran=range))
+                self.printPublishPosition(position, remote_id)
+            self.seq += 1
+            if self.seq>255:
+                self.seq=0
+            current_seq = self.seq
+            for anchor in self.anchors:
+                range = DeviceRange()
+                status = self.pozyx.getDeviceRangeInfo(anchor.network_id,range,remote_id)
+                if status == POZYX_SUCCESS:
+                    self.publishRanging(anchor.network_id, range, current_seq, remote_id)
+                        #print("Anchor {}, Range (mm): {ran.distance} Rss: {ran.RSS} ".format("0x%0.4x" % anchor.network_id, ran=range))
             
 
         # else:
         #     self.printPublishErrorCode("positioning")
     
-    def publishImu(self):
+    def publishImu(self, remote_id):
         quaternion = Quaternion()
         acceleration = Acceleration()
         angular_velocity = AngularVelocity()
-        self.pozyx.getQuaternion(quaternion, remote_id=self.remote_id)
-        self.pozyx.getLinearAcceleration_mg(acceleration, remote_id=self.remote_id)
-        self.pozyx.getAngularVelocity_dps(angular_velocity, remote_id=self.remote_id)
+        self.pozyx.getQuaternion(quaternion, remote_id=remote_id)
+        self.pozyx.getLinearAcceleration_mg(acceleration, remote_id=remote_id)
+        self.pozyx.getAngularVelocity_dps(angular_velocity, remote_id=remote_id)
         imu = Imu()
         imu.header.frame_id = "base_link"
         imu.header.stamp = rospy.Time.now()
@@ -161,15 +159,15 @@ class ReadyToLocalize(object):
             imu.orientation_covariance[i] = 0.001
 
         
-        self.imu_pub.publish(imu)
+        self.imu_pubs[str(remote_id)].publish(imu)
 
 
 
 
-    def publishRanging(self, anchorId, range, seq):
+    def publishRanging(self, anchorId, range, seq, remote_id):
         ranging = Ranging()
         ranging.anchorId = anchorId
-        ranging.tagId = self.remote_id
+        ranging.tagId = remote_id
         ranging.range = range.distance
         ranging.rss = range.RSS
         ranging.seq = seq
@@ -177,9 +175,9 @@ class ReadyToLocalize(object):
         self.ranging_pub.publish(ranging)
 
 
-    def printPublishPosition(self, position):
+    def printPublishPosition(self, position, remote_id):
         """Prints the Pozyx's position and possibly sends it as a OSC packet"""
-        network_id = self.remote_id
+        network_id = remote_id
         if network_id is None:
             network_id = 0
 
@@ -199,8 +197,8 @@ class ReadyToLocalize(object):
         p.header.frame_id = "map"
         p.header.stamp = rospy.Time.now()
 
-        self.pose_pub.publish(p)
-        self.publishImu()
+        self.pose_pubs[str(remote_id)].publish(p)
+        self.publishImu(remote_id)
 
         # tf2Broadcast = tf2_ros.TransformBroadcaster()
         # tf2Stamp = TransformStamped()
@@ -220,14 +218,14 @@ class ReadyToLocalize(object):
         #print("POS ID {}, x(mm): {pos.x} y(mm): {pos.y} z(mm): {pos.z}".format(
         #    "0x%0.4x" % network_id, pos=position))
 
-    def printPublishErrorCode(self, operation):
+    def printPublishErrorCode(self, operation, remote_id):
         """Prints the Pozyx's error and possibly sends it as a OSC packet"""
         error_code = SingleRegister()
-        network_id = self.remote_id
+        network_id = remote_id
         if network_id is None:
             self.pozyx.getErrorCode(error_code)
             print("LOCAL ERROR %s, %s" % (operation, self.pozyx.getErrorMessage(error_code)))
-        status = self.pozyx.getErrorCode(error_code, self.remote_id)
+        status = self.pozyx.getErrorCode(error_code, remote_id)
         if status == POZYX_SUCCESS:
             print("ERROR %s on ID %s, %s" %
                   (operation, "0x%0.4x" % network_id, self.pozyx.getErrorMessage(error_code)))
@@ -239,38 +237,40 @@ class ReadyToLocalize(object):
 
     def setAnchorsManual(self, save_to_flash=False):
         """Adds the manually measured anchors to the Pozyx's device list one for one."""
-        status = self.pozyx.clearDevices(remote_id=self.remote_id)
-        for anchor in self.anchors:
-            status &= self.pozyx.addDevice(anchor, remote_id=self.remote_id)
-        if len(self.anchors) > 4:
-            status &= self.pozyx.setSelectionOfAnchors(PozyxConstants.ANCHOR_SELECT_AUTO, len(self.anchors),
-                                                       remote_id=self.remote_id)
+        for remote_id in self.remote_ids:
+            status = self.pozyx.clearDevices(remote_id=remote_id)
+            for anchor in self.anchors:
+                status &= self.pozyx.addDevice(anchor, remote_id=remote_id)
+            if len(self.anchors) > 4:
+                status &= self.pozyx.setSelectionOfAnchors(PozyxConstants.ANCHOR_SELECT_AUTO, len(self.anchors),
+                                                        remote_id=remote_id)
 
-        if save_to_flash:
-            self.pozyx.saveAnchorIds(remote_id=self.remote_id)
-            self.pozyx.saveRegisters([PozyxRegisters.POSITIONING_NUMBER_OF_ANCHORS], remote_id=self.remote_id)
+            if save_to_flash:
+                self.pozyx.saveAnchorIds(remote_id=remote_id)
+                self.pozyx.saveRegisters([PozyxRegisters.POSITIONING_NUMBER_OF_ANCHORS], remote_id=remote_id)
         return status
 
     def printPublishConfigurationResult(self):
         """Prints and potentially publishes the anchor configuration result in a human-readable way."""
-        list_size = SingleRegister()
+        for remote_id in self.remote_ids:
+            list_size = SingleRegister()
 
-        self.pozyx.getDeviceListSize(list_size, self.remote_id)
-        print("List size: {0}".format(list_size[0]))
-        if list_size[0] != len(self.anchors):
-            self.printPublishErrorCode("configuration")
-            return
-        device_list = DeviceList(list_size=list_size[0])
-        self.pozyx.getDeviceIds(device_list, self.remote_id)
-        print("Calibration result:")
-        print("Anchors found: {0}".format(list_size[0]))
-        print("Anchor IDs: ", device_list)
+            self.pozyx.getDeviceListSize(list_size, remote_id)
+            print("List size: {0}".format(list_size[0]))
+            if list_size[0] != len(self.anchors):
+                self.printPublishErrorCode("configuration", remote_id)
+                return
+            device_list = DeviceList(list_size=list_size[0])
+            self.pozyx.getDeviceIds(device_list, remote_id)
+            print("Calibration result:")
+            print("Anchors found: {0}".format(list_size[0]))
+            print("Anchor IDs: ", device_list)
 
-        for i in range(list_size[0]):
-            anchor_coordinates = Coordinates()
-            self.pozyx.getDeviceCoordinates(device_list[i], anchor_coordinates, self.remote_id)
-            print("ANCHOR, 0x%0.4x, %s" % (device_list[i], str(anchor_coordinates)))
-            sleep(0.025)
+            for i in range(list_size[0]):
+                anchor_coordinates = Coordinates()
+                self.pozyx.getDeviceCoordinates(device_list[i], anchor_coordinates, remote_id)
+                print("ANCHOR, 0x%0.4x, %s" % (device_list[i], str(anchor_coordinates)))
+                sleep(0.025)
 
     def printPublishAnchorConfiguration(self):
         """Prints and potentially publishes the anchor configuration"""
@@ -286,7 +286,8 @@ if __name__ == "__main__":
     rospy.init_node('PozyxPositionReaderPython', anonymous=True)
 
     # Read parameters
-    targetDeviceIdString = rospy.get_param('~targetDeviceId')
+    target_ids_str = rospy.get_param('~target_ids')
+
     algorithmString = rospy.get_param('~algorithm')
     dimensionString = rospy.get_param('~dimension')
     height = rospy.get_param('~height')
@@ -301,17 +302,28 @@ if __name__ == "__main__":
     elif dimensionString.startswith('DIMENSION_2_5D'):
         dimension = PozyxConstants.DIMENSION_2_5D
 
-    targetDeviceId = int(str(targetDeviceIdString),16)
-    
 
-    pub_localization = rospy.Publisher('/gtec/uwb/position/pozyx/'+str(targetDeviceIdString), PoseWithCovarianceStamped, queue_size=100)
+    target_ids = []
+    
+    for target_id_str in target_ids_str:
+        target_ids.append(int(str(target_id_str),16))
+    
+    pubs_localization = {}
+    pubs_imu = {}
+
+    for target_id in target_ids:
+        pub_localization = rospy.Publisher('/gtec/uwb/position/pozyx/'+str(target_id), PoseWithCovarianceStamped, queue_size=100)
+        pub_imu = rospy.Publisher('/gtec/uwb/imu/pozyx/'+str(target_id), Imu, queue_size=100)
+        pubs_localization[str(target_id)] = pubs_localization
+        pubs_imu[str(target_id)] = pub_imu
+
     pub_ranging = rospy.Publisher("/gtec/toa/ranging", Ranging, queue_size=100)
-    pub_imu = rospy.Publisher("/gtec/uwb/imu/pozyx", Imu, queue_size=100)
     rate = rospy.Rate(10) # 10hz
 
 
     print("=========== POZYX Localizator ============")
-    print("targetDeviceId: " + str(targetDeviceIdString))
+    print("targetIds: ")
+    print(target_ids)
     print("algorithm: " + algorithmString)
     print("dimension: " + dimensionString)
     print("height: " + str(height))
@@ -328,7 +340,7 @@ if __name__ == "__main__":
         quit()
     pozyxSerial = PozyxSerial(serial_port)
 
-    pozyxLocalizator = PozyxLocalizator(pozyxSerial,rate, pub_localization, pub_ranging, pub_imu, targetDeviceId, algorithm, dimension, height)
+    pozyxLocalizator = PozyxLocalizator(pozyxSerial,rate, pubs_localization, pub_ranging, pubs_imu, target_ids, algorithm, dimension, height)
 
 
     rospy.Subscriber('/gtec/toa/anchors', MarkerArray, pozyxLocalizator.callbackAnchorsMessage)
